@@ -1,6 +1,6 @@
 # Humidity sensor and fan controller for a small boat
 ## By Owen.
-![The Plan](./Docs/parts.jpg)
+![The Plan](./Docs/parts-s.jpg)
 * DigiSpark Based
  * ATTiny 85
  * Has a onboard 5v regulator
@@ -13,7 +13,7 @@
 * A button.. to allow on/off/quiet, etc.
 
 #####Assembled:
-![Ugly Blobby Soldering. Sigh](./Docs/pcb.jpg)
+![Ugly Blobby Soldering. Sigh](./Docs/pcb-s.jpg)
 
 Software is the next target; I have working sketches (see the `Code/` folder):
 1. `VoltageCalibrate.ino` : Test and calibrate the Voltage sensor using USB-CDC serial to feedback.
