@@ -5,10 +5,10 @@ EELAYER END
 $Descr User 7874 5906
 encoding utf-8
 Sheet 1 1
-Title ""
-Date ""
-Rev ""
-Comp ""
+Title "DigiSpark Fan Controller for Boats"
+Date "2019-08-29"
+Rev "1.0"
+Comp "Owen Carter"
 Comment1 ""
 Comment2 ""
 Comment3 ""
