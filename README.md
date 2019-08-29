@@ -9,10 +9,10 @@
 * DHT11 Temperature and Humidity sensor
  * Not ideal, something more accurate would be prefered, but this is what I have.
  * A DHT22 would be an easy (plug and go) upgrade
-* PWM fan control via a mosfet
+* PWM fan control via a high-current logic-level NPN mosfet
+ * I have a quiet but powerful (Noctuna) 12V PC case fan to run from this
 * Battery voltage sensing for powersave and shutdown
-* A button.. to allow on/off/quiet, etc.
-* I have a 12V quiet (Noctuna) PC case fan to run from this
+* A button.. to allow on/off/quiet overrides
 
 #####Assembled:
 ![Ugly Blobby Soldering. Sigh](./Docs/pcb-s.jpg)
