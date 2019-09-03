@@ -68,7 +68,10 @@ void flashFan(int digit)
 
 /*   SETUP    */
 
-void setup() {                
+void setup() {
+  // Set HiSpeed PWM. Does it screw up delay and dht11?
+  TCCR0B = TCCR0B & 0b11111000 | 0b001;
+
   pinMode(FAN_PIN,OUTPUT);
   analogWrite(FAN_PIN,0);
   dht.setup(DHT_PIN);
@@ -97,6 +100,11 @@ void loop() {
   }
   else 
   {
+    // DHT pin is also the notofication led pin..
+    pinMode(DHT_PIN, OUTPUT);
+    digitalWrite(DHT_PIN, LOW);
+    // the DHT lib will leave it as an input..
+    
     // Flash out values when button pressed
 
     // Temperature
@@ -118,7 +126,23 @@ void loop() {
     delay(valueDelay);
   } 
  
-  // wait for a button press
-  while (digitalRead(BUTTON_PIN) == true) delay(10);
-  while (digitalRead(BUTTON_PIN) == false) delay(10);
+  // wait for a button press (button is inverted)
+  delay(1000); // 2sec delay
+  byte pwm = 255;
+  while (( digitalRead(BUTTON_PIN) == true ) && ( pwm != 0 )) {
+    analogWrite(FAN_PIN,pwm);
+    pwm--;
+    delay(100);
+  }
+  while (( digitalRead(BUTTON_PIN) == true) && ( pwm != 255 )) {
+    analogWrite(FAN_PIN,pwm);
+    pwm++;
+    delay(100);
+  }
+  digitalWrite(DHT_PIN, HIGH);
+  delay(30); // debounce delay
+  while (digitalRead(BUTTON_PIN) == false) delay(10); // wait for release
+  analogWrite(FAN_PIN,0); // turn led off
+  delay(330);
+  digitalWrite(DHT_PIN, LOW); 
 }
