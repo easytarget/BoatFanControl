@@ -19,7 +19,9 @@ Turns the Fan on and Off (and several speeds in between) depending on the temper
 
 #### Encased and Hardware complete
 ![Ready To Fit](./Docs/encased-s.jpg)
+
 Case design (scad) and model files are in the repo.
+
 ![Proud](./Docs/complete-s.jpg)
 
 Software is the next target; I have working sketches (see the `Code/` folder):
@@ -29,12 +31,18 @@ Software is the next target; I have working sketches (see the `Code/` folder):
 
 These Sketches have verified my wiring and confirmed the calibration of the resistor divider used to sense the battery voltage.
 
-My next stage is to define the main control loop; and implement it. 
+I now need to define the main control loop; and implement it. 
+* One reading every 30S and then decide how to set fan.
 * Power Control
   * Vmin->11.8V : Powersave mode; no activity, wake every 30s to take and process a voltage reading. Ignore button
   * 11.8->12.6V : Low Power Mode(s); start running the fan; limit max speed. respect quiet/off overrides
   * 12.6->Vmax  : Full power mode. respect quiet/off overrides
-* Testing will be tricky.. I'll need to 'fake it' somehow
+* Fan Control
+  * Need to think about this
+* User Control
+  * Off/Quiet/Idle
+* Average readings; discard outliers
+* Testing will be tricky.. I'll need to 'fake it' somehow for the humidity/temp readings.
 * I'd like to use interrupts and have the controller sleep between readings/decisions.
 
 Finally.. Mounting the Fan. Wiring it in. And Kill the power LED on the DigiSpark (there is a track you can cut).
