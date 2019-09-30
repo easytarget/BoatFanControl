@@ -2,14 +2,15 @@
 #include <avr/sleep.h>
 #include <avr/interrupt.h>
 const int switchPin = 3;
-const int statusLED = 2;
+const int statusLED = 1;
+int wakeReason = 0;
 
 void setup() {
     pinMode(switchPin, INPUT);
     pinMode(statusLED, OUTPUT);
 
     // Flash quick sequence so we know setup has started
-    for (int k = 0; k < 5; k++) {
+    for (int k = 0; k < 10; k++) {
         if (k % 2 == 0) {
             digitalWrite(statusLED, HIGH);
         }
@@ -18,6 +19,7 @@ void setup() {
         }
         delay(250);
     } // for
+    delay(1000);
 } // setup
 
 void sleep() {
@@ -50,10 +52,12 @@ ISR(PCINT0_vect) {
 }
 
 void loop() {
-    wakereason = 0; // Will be set to tell us wether timer of button happened.
+    wakeReason = 0; // Will be set to tell us wether timer of button happened.
     sleep();
-    if (wakereason == 1)
-    digitalWrite(statusLED, HIGH);
-    delay(1000);
-    digitalWrite(statusLED, LOW);
+    if (wakeReason == 1) {
+        digitalWrite(statusLED, HIGH);
+        delay(200);
+        digitalWrite(statusLED, LOW);
+        delay(1000);
+    }
 }
