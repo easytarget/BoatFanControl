@@ -12,9 +12,9 @@
          D0 - Fan PWM
 
  */
-  
+ 
 // For loop/logic debug use SerialCDC in place of DHT sensor
-#define DEVEL  // must also enable FANDEBUG
+#define DEVEL
 
 // For Sensor Debug use the fan pin to flash a LED for feedback
 #define FANDEBUG
@@ -44,11 +44,11 @@
   const int valueDelay = 3000; // delay after sending
 #endif
 
-void myDelay(int t) {
+void myDelay(int f) {
   #ifdef DEVEL
-    SerialUSB.delay(t);
+    SerialUSB.delay(f);
   #else
-    delay(t);
+    delay(d);
   #endif
 }
 
@@ -115,9 +115,9 @@ void flashInt(int val)
 
 void flashFloat(int val)
 {
-  #ifdef FANDEBUG // this is crude, but works.
+  #ifdef FANDEBUG
     val = floor(val * 10);
-    int valH = val / 100;  
+    int valH = val / 100;  // this is crude, but works.
     int valT = (val - (valH * 100)) / 10;
     int valU = (val - (valH * 100) - (valT * 10));
     flashDigit(valH);
@@ -138,7 +138,7 @@ void setup() {
   analogWrite(FAN_PIN,0);
   #ifdef DEVEL
     SerialUSB.begin();
-    SerialUSB.println(F("Hello"));
+    Serial.println(F("Hello"));
   #else
     dht.setup(DHT_PIN);
   #endif
@@ -170,18 +170,18 @@ void loop() {
   }
   else 
   {
-    // if Debug: Flash out values when button pressed
+    // Flash out values when button pressed
     flashInt(temp);
     flashInt(humi);
     flashFloat(vBatt);
     
     #ifdef DEVEL
       // Serial dump results when button pressed
-      //SerialUSB.print(temp);
-      //SerialUSB.print(F(" : "));
-      //SerialUSB.print(humi);
-      //SerialUSB.print(F(" : "));
-      //SerialUSB.println(vBatt);
+      SerialUSB.print(temp);
+      SerialUSB.print(F(" : "));
+      SerialUSB.print(humi);
+      SerialUSB.print(F(" : "));
+      SerialUSB.println(vBatt);
     #endif
   } 
  
