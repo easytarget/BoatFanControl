@@ -17,12 +17,12 @@
 #define DEVEL
 
 // For Sensor Debug use the fan pin to flash a LED for feedback
-#define FANDEBUG
+//#define FANDEBUG
 
 /*-------------------------------*/
 
 #ifdef DEVEL
-  #include <DigiCDC.h>
+  #include <DigiUSB.h>
 #else
   #include <DHT11.h>
   DHT11 dht;
@@ -44,9 +44,9 @@
   const int valueDelay = 3000; // delay after sending
 #endif
 
-void myDelay(int f) {
+void myDelay(int d) {
   #ifdef DEVEL
-    SerialUSB.delay(f);
+    DigiUSB.delay(d);
   #else
     delay(d);
   #endif
@@ -137,8 +137,8 @@ void setup() {
   pinMode(FAN_PIN,OUTPUT);
   analogWrite(FAN_PIN,0);
   #ifdef DEVEL
-    SerialUSB.begin();
-    Serial.println(F("Hello"));
+    DigiUSB.begin();
+    //DigiUSB.println(F("Hello"));
   #else
     dht.setup(DHT_PIN);
   #endif
@@ -177,15 +177,18 @@ void loop() {
     
     #ifdef DEVEL
       // Serial dump results when button pressed
-      SerialUSB.print(temp);
-      SerialUSB.print(F(" : "));
-      SerialUSB.print(humi);
-      SerialUSB.print(F(" : "));
-      SerialUSB.println(vBatt);
+      DigiUSB.print(millis());
+      DigiUSB.print(F(" : "));
+      DigiUSB.print(temp);
+      DigiUSB.print(F(" : "));
+      DigiUSB.println(humi);
+      DigiUSB.print(F(" : "));
+      DigiUSB.println(int(vBatt*100));
     #endif
   } 
  
   // wait for a button press
-  while (digitalRead(BUTTON_PIN) == true) myDelay(10);
-  while (digitalRead(BUTTON_PIN) == false) myDelay(10);
+  //while (digitalRead(BUTTON_PIN) == true) myDelay(10);
+  //while (digitalRead(BUTTON_PIN) == false) myDelay(10);
+  myDelay(1000);
 }
