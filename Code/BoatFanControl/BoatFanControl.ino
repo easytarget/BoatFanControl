@@ -13,7 +13,7 @@
 
  */
  
-// For loop/logic debug use SerialCDC in place of DHT sensor
+// For loop/logic debug use DigiUSB in place of DHT sensor
 #define DEVEL
 
 /*-------------------------------*/
@@ -22,14 +22,13 @@
   #include <DigiUSB.h>
 #endif
 
-#include <DHT11.h>
-DHT11 dht;
-
-#define FAN_PIN 0  // D0
-#define DHT_PIN 1  // D1
-#define VCC_PIN 2  // D2 used to set pin mode
-#define VCC_APIN 1 // D2 = A1 for analog read
+#define FAN_PIN 0
+#define DHT_PIN 1
+#define VCC_PIN 2
+#define VCC_APIN 1 // digital pin 2 is also analog pin 1
 #define BUTTON_PIN 3 
+
+#define CYCLETIME 5000 // Primary reading loop time (ms)
 
 void myDelay(int d) {
   #ifdef DEVEL
@@ -46,7 +45,7 @@ float readVbatt()
   // Value used here is was double-checked by calibration.
 
   int res = analogRead(VCC_APIN);
-  return res * 0.053; // Vbatt in volts
+  return res * 0.0532; // Vbatt in volts
 }
 
 void flashError(void)
@@ -61,7 +60,9 @@ void setup() {
   analogWrite(FAN_PIN,0);
   #ifdef DEVEL
     DigiUSB.begin();
-    DigiUSB.println(F("Begin.."));
+    DigiUSB.println(F("Begin"));
+  #else
+    dht.setup(DHT_PIN);
   #endif
   dht.setup(DHT_PIN);
   pinMode(VCC_PIN,INPUT);
@@ -69,6 +70,11 @@ void setup() {
 }
 
 /*   LOOP     */
+#ifdef DEVEL
+  int Ptemp=24;
+  int Phumi=60;
+  float Pbatt=12.5;
+#endif
 
 void loop() {
   #ifdef DEVEL
@@ -77,9 +83,15 @@ void loop() {
   #endif
 
   // Readings
-  int temp = dht.getTemperature();
-  int humi = dht.getHumidity();
-  float vBatt = readVbatt();
+  #ifdef DEVEL
+    int temp = Ptemp;
+    int humi = Phumi;
+    float batt = Pbatt;
+  #else
+    int temp = dht.getTemperature();
+    int humi = dht.getHumidity();
+    float batt = readVbatt();
+  #endif
 
   if (strcmp(dht.getStatusString(),"OK") != 0) 
   {
@@ -90,25 +102,27 @@ void loop() {
   }
   else 
   {
-    // Do something with values
+    // Flash out values when button pressed
+    flashInt(temp);
+    flashInt(humi);
+    flashFloat(batt);
     
     #ifdef DEVEL
-      // Serial dump results when button pressed
+      DigiUSB.print(millis());
+      DigiUSB.print(F(" : "));
       DigiUSB.print(temp);
-      DigiUSB.print(F(" : "));
+      DigiUSB.print(F("C : "));
       DigiUSB.print(humi);
-      DigiUSB.print(F(" : "));
+      DigiUSB.print(F("% : "));
+      DigiUSB.print(int(batt*1000));
+      DigiUSB.print(F("mV"));
+      DigiUSB.println();
     #endif
   } 
-  #ifdef DEVEL
-    DigiUSB.print(int(vBatt*100));
-  #endif
 
-  myDelay(1500);
   #ifdef DEVEL
-    DigiUSB.println();
-    while (!DigiUSB.available()) myDelay(100);
-    DigiUSB.read();
+    myDelay(4000);
+  #else
+    myDelay(60000); 
   #endif
-  
 }
