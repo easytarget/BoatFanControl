@@ -24,8 +24,8 @@
 
 #define FAN_PIN 0
 #define DHT_PIN 1
-#define VCC_PIN 2
-#define VCC_APIN 1 // digital pin 2 is also analog pin 1
+#define VIN_PIN 2
+#define VIN_APIN 1 // digital pin 2 is also analog pin 1
 #define BUTTON_PIN 3 
 
 #define CYCLETIME 5000 // Primary reading loop time (ms)
@@ -44,7 +44,7 @@ float readVbatt()
   // From: 0-5v ADC 10 bit reading, and 10k:1k resistor divider
   // Value used here is was double-checked by calibration.
 
-  int res = analogRead(VCC_APIN);
+  int res = analogRead(VIN_APIN);
   return res * 0.0532; // Vbatt in volts
 }
 
@@ -65,7 +65,7 @@ void setup() {
     dht.setup(DHT_PIN);
   #endif
   dht.setup(DHT_PIN);
-  pinMode(VCC_PIN,INPUT);
+  pinMode(VIN_PIN,INPUT);
   pinMode(BUTTON_PIN,INPUT);
 }
 
