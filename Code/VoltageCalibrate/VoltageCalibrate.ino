@@ -2,20 +2,20 @@
 
 // Some Hardware
 #define FAN_PIN 0 
-#define VCC_PIN 2
-#define VCC_APIN 1 // digital pin 2 is also analog pin 1
+#define VIN_PIN 2
+#define VIN_APIN 1 // digital pin 2 is also analog pin 1
 
 // Store result
 int res[30];
 
 void setup() {                
   // initialize the IO pin
-  pinMode(VCC_PIN,INPUT);
+  pinMode(VIN_PIN,INPUT);
   DigiUSB.begin();
 }
 
 // the loop routine runs over and over again forever:
-float target = 11;
+float target = 10;
 
 void loop() {
   DigiUSB.println();
@@ -29,7 +29,7 @@ void loop() {
 
   for (int i=0; i < 30; i++) {
     DigiUSB.delay(200);
-    res[i] = analogRead(VCC_APIN);
+    res[i] = analogRead(VIN_APIN);
     DigiUSB.print(res[i]);
     DigiUSB.print(F(", "));
     if (i%10 == 9) DigiUSB.println();
