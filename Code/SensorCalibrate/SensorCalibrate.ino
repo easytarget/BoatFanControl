@@ -10,6 +10,9 @@
 // Scale factor for ADC1 to volts
 #define VOLTAGESCALE 0.0531
 
+// Cycle time per reading in ms (+3s for reading+led flash)
+#define CYCLE 30000
+
 // Sensor
 DHT11 dht;
 // Store result
@@ -22,15 +25,22 @@ void setup() {
   pinMode(LED_PIN,OUTPUT);
   pinMode(VIN_PIN,INPUT);
   dht.setup(DHT_PIN);
+  DigiUSB.delay(500); // let DHT settle
 }
 
 void loop() {
   for (int i=0; i < 10; i++) {
-    digitalWrite(LED_PIN,i%2);
-    DigiUSB.delay(2000);
+    unsigned long start = millis();
+    digitalWrite(LED_PIN,i%2); // flash the fan pin
     t[i] = dht.getTemperature();
     h[i] = dht.getHumidity();
     v[i] = analogRead(VIN_APIN);
+    // Puse then turn the onboard LED off
+    pinMode(DHT_PIN, OUTPUT);  // Set to output for LED feedback
+    digitalWrite(DHT_PIN,LOW);
+    DigiUSB.delay(CYCLE);
+    pinMode(DHT_PIN, INPUT);  // set to input for the dht readings
+    DigiUSB.delay(2000);
   }
   unsigned int tt=0;
   unsigned int tmax=0;
@@ -59,12 +69,16 @@ void loop() {
   vt = vt-vmax-vmin;   // do the same for humidity readings
   float mv = vt * VOLTAGESCALE / 8;
 
-  for (int i=0;i<20;i++) {
+  pinMode(DHT_PIN, OUTPUT);
+  for (int i=0;i<10;i++) {
     digitalWrite(LED_PIN,HIGH);
+    digitalWrite(DHT_PIN,HIGH);
     DigiUSB.delay(50);
     digitalWrite(LED_PIN,LOW);
+    digitalWrite(DHT_PIN,LOW);
     DigiUSB.delay(50);
     }
+  pinMode(DHT_PIN, INPUT);
   DigiUSB.begin();
   DigiUSB.delay(1000);
   
@@ -83,6 +97,7 @@ void loop() {
   DigiUSB.println('%');
   DigiUSB.print(int(mv));
   DigiUSB.print('.');
-  DigiUSB.println(int(mv*10)%10);
+  DigiUSB.print(int(mv*10)%10);
+  DigiUSB.print('v');
   DigiUSB.println();
 }
