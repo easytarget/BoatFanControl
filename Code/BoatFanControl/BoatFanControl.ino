@@ -14,12 +14,15 @@
  */
  
 // For loop/logic debug use DigiUSB in place of DHT sensor
-#define DEVEL
+//#define DEVEL
 
 /*-------------------------------*/
 
 #ifdef DEVEL
   #include <DigiUSB.h>
+#else
+  #include <DHT11.h>
+  DHT11 dht;
 #endif
 
 #define FAN_PIN 0
@@ -28,9 +31,21 @@
 #define VIN_APIN 1 // digital pin 2 is also analog pin 1
 #define BUTTON_PIN 3 
 
-#define CYCLETIME 5000 // Primary reading loop time (ms)
+// Scale factor for ADC1 to volts
+#define VOLTAGESCALE 0.0531
+// Primary reading loop time (ms)
+#ifdef DEVEL
+  #define CYCLETIME  5000
+#else
+  #define CYCLETIME 60000
+#endif
 
-void myDelay(int d) {
+// Store results
+unsigned int t[10];
+unsigned int h[10];
+unsigned int v[10];
+
+void myDelay(unsigned long d) {
   #ifdef DEVEL
     DigiUSB.delay(d);
   #else
@@ -45,11 +60,18 @@ float readVbatt()
   // Value used here is was double-checked by calibration.
 
   int res = analogRead(VIN_APIN);
-  return res * 0.0532; // Vbatt in volts
+  return res * 0.0531; // Vbatt in volts
 }
 
-void flashError(void)
+void flashFast(byte f)
 {
+  pinMode(DHT_PIN, OUTPUT);
+  for (byte i; i < f; i++) {
+    digitalWrite(DHT_PIN,HIGH);
+    myDelay(100);
+    digitalWrite(DHT_PIN,LOW);
+    myDelay(100);
+  }
 }
   
 
@@ -61,10 +83,30 @@ void setup() {
   #ifdef DEVEL
     DigiUSB.begin();
     DigiUSB.println(F("Begin"));
+    flashFast(10);
   #else
+    flashFast(100);
+    myDelay(1000);
     dht.setup(DHT_PIN);
   #endif
-  dht.setup(DHT_PIN);
+
+  // pre-populate the results
+  int firstTemp = 22;
+  int firstHumi = 55;
+  int firstVolt = 12;
+  #ifndef DEVEL
+    do {
+      myDelay(250);
+      firstTemp = dht.getTemperature();
+      firstHumi = dht.getHumidity();
+      firstVolt = readVbatt();
+    } while (strcmp(dht.getStatusString(),"OK") != 0);
+  #endif
+  for (int i;i<10;i++) {
+    t[i] = firstTemp;
+    h[i] = firstHumi;
+    v[i] = firstVolt;
+  }
   pinMode(VIN_PIN,INPUT);
   pinMode(BUTTON_PIN,INPUT);
 }
@@ -76,53 +118,53 @@ void setup() {
   float Pbatt=12.5;
 #endif
 
+int index = 0;
 void loop() {
+  unsigned long start = millis();
   #ifdef DEVEL
-    DigiUSB.print(millis());
-    DigiUSB.print(F(" : "));
+    DigiUSB.print(start);
   #endif
 
   // Readings
   #ifdef DEVEL
-    int temp = Ptemp;
-    int humi = Phumi;
-    float batt = Pbatt;
+    index++;
+    index%=10;
+    t[index] = Ptemp;
+    h[index] = Phumi;
+    v[index] = Pbatt;
   #else
+    pinMode(DHT_PIN, INPUT);  // set to input for the dht readings
+    myDelay(1000);      // let pin settle
     int temp = dht.getTemperature();
     int humi = dht.getHumidity();
     float batt = readVbatt();
+    if (strcmp(dht.getStatusString(),"OK") != 0) {
+      flashFast(10);
+    } else {
+      index++;
+      index%=10;
+      t[index] = temp;
+      h[index] = humi;
+      v[index] = batt;
+    }
   #endif
 
-  if (strcmp(dht.getStatusString(),"OK") != 0) 
-  {
-    flashError();
-    #ifdef DEVEL
-      DigiUSB.print(F("Err : "));
-    #endif
-  }
-  else 
-  {
-    // Flash out values when button pressed
-    flashInt(temp);
-    flashInt(humi);
-    flashFloat(batt);
-    
-    #ifdef DEVEL
-      DigiUSB.print(millis());
-      DigiUSB.print(F(" : "));
-      DigiUSB.print(temp);
-      DigiUSB.print(F("C : "));
-      DigiUSB.print(humi);
-      DigiUSB.print(F("% : "));
-      DigiUSB.print(int(batt*1000));
-      DigiUSB.print(F("mV"));
-      DigiUSB.println();
-    #endif
-  } 
+  // process results (array)
 
+  // Make decisions and set fan
+  
   #ifdef DEVEL
-    myDelay(4000);
-  #else
-    myDelay(60000); 
+    DigiUSB.print(F("ms : "));
+    DigiUSB.print(index);
+    DigiUSB.print(F("  : "));
+    DigiUSB.print(t[index]);
+    DigiUSB.print(F("C : "));
+    DigiUSB.print(h[index]);
+    DigiUSB.print(F("% : "));
+    DigiUSB.print(int(v[index]*1000));
+    DigiUSB.print(F("mV"));
+    DigiUSB.println();
   #endif
+
+  while(millis() - start < CYCLETIME) myDelay(100); // SLEEP/CHECK BUTTON HERE
 }
