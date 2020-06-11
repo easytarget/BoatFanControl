@@ -1,4 +1,4 @@
-#include <DigiUSB.h> // Remove at the end of days...
+#include <DigiUSB.h> 
 #include <DHT11.h>
 
 // Some Hardware
@@ -11,7 +11,7 @@
 #define VOLTAGESCALE 0.0531
 
 // Cycle time per reading in ms (+3s for reading+led flash)
-#define CYCLE 30000
+#define CYCLE 12000
 
 // Sensor
 DHT11 dht;
@@ -63,9 +63,9 @@ void loop() {
     if (v[i] > vmax) vmax=v[i];
   }
   tt = tt-tmax-tmin;   // take off one min and one max value from 10 reading total
-  unsigned int temp = round(tt/8);  // then divide by 8 to get a de-peaked average
+  unsigned int temp = ceil(tt/8);  // then divide by 8 to get a de-peaked average
   ht = ht-hmax-hmin;   // do the same for humidity readings
-  unsigned int humi = round(ht/8);
+  unsigned int humi = ceil(ht/8);
   vt = vt-vmax-vmin;   // do the same for humidity readings
   float mv = vt * VOLTAGESCALE / 8;
 
