@@ -37,14 +37,16 @@
 #define VOLTAGESCALE 0.0531
 
 // Values
+#define FAN_OFF    0
 #define FAN_LOW   96
 #define FAN_HIGH 255
+#define LED_OFF    0
 #define LED_LOW   10
 #define LED_HIGH 255
 
 // Limits
-#define VIN_LOW  11.8  // turn Off below this
-#define VIN_GOOD 12.5  // run full above this
+#define VIN_LOW  222  // turn Off below 11.8v (/ VOLTAGESCALE)
+#define VIN_GOOD 235  // run Low below 12.5v (/ VOLTAGESCALE)  
 #define TEMP_MAX 28    // fan runs above this temperature
 #define HUMI_MAX 75    // fan runs above this humidity
 
@@ -132,6 +134,7 @@ void setup() {
 /*   LOOP     */
 
 // Globals for the loop
+unsigned long lastRead = -CYCLETIME; 
 int index = 0;
 bool button = false;
 enum powerstates{off,low,high} power = high;
@@ -139,37 +142,72 @@ byte fan = 0;
 byte led = 255;
 
 void loop() {
-  unsigned long start = millis();
+  
+  while(millis() - lastRead < CYCLETIME) {
+    myDelay(100);
+    #ifdef DEVEL 
+      while(DigiUSB.available()) {
+        char s = DigiUSB.read();
+        switch (s) {
+          case 'T': Ptemp=min(Ptemp+1,40); break;
+          case 't': Ptemp=max(Ptemp-1,0); break;
+          case 'H': Phumi=min(Phumi+1,100); break;
+          case 'h': Phumi=max(Phumi-1,0); break;
+          case 'V': Pvolt=min(Pvolt+1,350); break;
+          case 'v': Pvolt=max(Pvolt-1,0); break;
+          case 'b': button = true; lastRead = millis() - CYCLETIME; break;
+        }
+      }
+    #else
+      if (!digitalRead(BUTTON_PIN)) {
+        if (button == false) {
+          button = true;
+          // DEBOUNCE!!!!
+          lastRead = millis() - CYCLETIME;
+        }
+      }
+    #endif
+  }
+
   #ifdef DEVEL
-    DigiUSB.print(start);
+    DigiUSB.print(lastRead);
   #endif
 
   // Process button
   if (button) {
     switch (power) {
-      case off: power = low; flashFast(2,LED_HIGH); break;
-      case low: power = high; flashFast(5,LED_HIGH); break;
-      case high: power = off; flashFast(1,LED_HIGH); break;
+      case off:  power = low; 
+                 flashFast(2,LED_HIGH); 
+                 led = LED_LOW; 
+                 break;
+      case low:  power = high; 
+                 flashFast(5,LED_HIGH); 
+                 led = LED_HIGH; 
+                 break;
+      case high: power = off; 
+                 flashFast(1,LED_HIGH);
+                 led = LED_OFF;
+                 break;
     }
+    myDelay(1500);
   }
   button=false;
 
   // Readings
   pinMode(DHT_PIN, INPUT);  // set to input for the dht readings
+  myDelay(1);
   #ifdef DEVEL
     index++;
     index%=10;
     t[index] = Ptemp;
     h[index] = Phumi;
     v[index] = Pvolt;
-    myDelay(100);
   #else
-    myDelay(300);
     byte temp = constrain(dht.getTemperature(),0,40);
     byte humi = constrain(dht.getHumidity(),0,100);
     float volt = constrain(readVIN(),0,350);
     if (strcmp(dht.getStatusString(),"OK") != 0) {
-      flashFast(3,255); 
+      flashFast(3,led); 
     } else {
       index++;
       index%=10;
@@ -178,11 +216,17 @@ void loop() {
       v[index] = volt;
     }
   #endif
-  myDelay(500); // turn pin to HIGH and longer delay in full mode
-  pinMode(DHT_PIN, OUTPUT); // onboard led off after reading
+  pinMode(DHT_PIN, OUTPUT); // flash led after reading
+  analogWrite(DHT_PIN,led);
+  myDelay(10);
+  if (power == low) myDelay(100);
+  if (power == high) myDelay(100);
   digitalWrite(DHT_PIN,LOW);
 
-  // process results (array)
+  lastRead = millis();
+
+
+  // Determine averages after discarding max and min
   unsigned int tt=0;
   unsigned int tmax=0;
   unsigned int tmin=255;
@@ -204,18 +248,23 @@ void loop() {
     if (v[i] > vmax) vmax=v[i];
   }
   tt = tt-tmax-tmin;   // take off one min and one max value from 10 reading total
-  unsigned int tempAvg = ceil(tt/8);  // then divide by 8 to get a de-peaked average
+  unsigned int tempAvg = ceil(tt / 8);  // then divide by 8 to get a de-peaked average
   ht = ht-hmax-hmin;   // do the same for humidity readings
-  unsigned int humiAvg = ceil(ht/8);
-  vt = vt-vmax-vmin;   // do the same for humidity readings
-  float voltAvg = vt * VOLTAGESCALE / 8;
+  unsigned int humiAvg = ceil(ht / 8);
+  vt = vt-vmax-vmin;   // do the same for voltage readings
+  unsigned int voltAvg = ceil(vt / 8);
 
-  switch (power) {
-    case off: fan = 0; led = 0; break;
-    case low: fan = FAN_LOW; led = LED_LOW; break;
-    case high: fan = FAN_HIGH; led = LED_HIGH; break;
+  // Decide on fan settings
+  if ((voltAvg < VIN_LOW) || (power == off)) {
+    fan = 0; 
+  } else if ((voltAvg < VIN_GOOD) || (power == low)) {
+      fan = FAN_LOW; // turn on/off based on temp+humidity
+  } else {
+      fan = FAN_HIGH; // turn on/off and set level based on temp+humidity
   }
   
+  analogWrite(FAN_PIN,fan);
+
   #ifdef DEVEL
     DigiUSB.print(':');
     DigiUSB.print(index);
@@ -225,42 +274,11 @@ void loop() {
     DigiUSB.print(',');
     DigiUSB.print(humiAvg);
     DigiUSB.print(',');
-    DigiUSB.print(int(voltAvg));
-    DigiUSB.print('.');
-    DigiUSB.print(int(voltAvg*10)%10);
+    DigiUSB.print(voltAvg);
     DigiUSB.print(',');
     DigiUSB.print(int(fan));
     DigiUSB.print(',');
     DigiUSB.print(int(led));
-  #else
-    analogWrite(FAN_PIN,fan);
-  #endif
-
-  while(millis() - start < CYCLETIME) {
-    myDelay(100);
-    #ifdef DEVEL 
-      while(DigiUSB.available()) {
-        char s = DigiUSB.read();
-        switch (s) {
-          case 'T': Ptemp=min(Ptemp+1,40); break;
-          case 't': Ptemp=max(Ptemp-1,0); break;
-          case 'H': Phumi=min(Phumi+1,100); break;
-          case 'h': Phumi=max(Phumi-1,0); break;
-          case 'V': Pvolt=min(Pvolt+1,350); break;
-          case 'v': Pvolt=max(Pvolt-1,0); break;
-          case 'b': button = true; start = millis() - CYCLETIME; break;
-        }
-      }
-    #else
-      if (!digitalRead(BUTTON_PIN)) {
-        if (button == false) {
-          button = true;
-          start = millis() - CYCLETIME;
-        }
-      }
-    #endif
-  }
-  #ifdef DEVEL
     DigiUSB.println();
   #endif
 }
