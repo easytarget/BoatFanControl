@@ -11,12 +11,14 @@
          D1 - DHT11     (Onboard LED)
          D0 - Fan PWM
 
+ Notes: 
+  DHT11 is pretty low tolerance and only returns whole integer results.
+  Use integer values for thresholds.
+  See definitions below on how to calculate voltage trigger levels.
  */
  
 // For loop/logic debug use DigiUSB in place of DHT sensor
 //#define DEVEL
-
-/*-------------------------------*/
 
 #ifdef DEVEL
   #include <DigiUSB.h>
@@ -31,11 +33,6 @@
 #define VIN_APIN 1 // digital pin 2 is also analog pin 1
 #define BUTTON_PIN 3 
 
-// The ADC reading is multiplied by a scale factor = (5/1024)*11 = 0.05371 to get Volts
-// The 0-5v ADC range returns a 10 bit reading of VIN via a 10k:1k resistor divider
-// Value used here is was double-checked by calibration.
-#define VOLTAGESCALE 0.0531
-
 // Values
 #define FAN_OFF    0
 #define FAN_LOW   96
@@ -44,19 +41,27 @@
 #define LED_LOW   10
 #define LED_HIGH 255
 
+// The ADC reading is multiplied by a scale factor = (5/1024)*11 = 0.05371 to get Volts
+// The 0-5v ADC range returns a 10 bit reading of VIN via a 10k:1k resistor divider
+// Value used here is was double-checked by calibration.
+// Not used in code ;-)  Use it below when calculating VIN_LOW & VIN_GOOD
+#define VOLTAGESCALE 0.0531
+
 // Limits
-#define VIN_LOW  222  // turn Off below 11.8v (/ VOLTAGESCALE)
-#define VIN_GOOD 235  // run Low below 12.5v (/ VOLTAGESCALE)  
-#define TEMP_MAX 28    // fan runs above this temperature
-#define HUMI_MAX 75    // fan runs above this humidity
+#define VIN_LOW  222  // turn off below 11.8v (11.8 / VOLTAGESCALE)
+#define VIN_GOOD 235  // run low below 12.5v (12.5 / VOLTAGESCALE)  
+#define TEMP_MAX 28    // fan only runs above this temperature
+#define HUMI_MAX 75    // fan only runs above this humidity
 
 // Primary reading loop time (ms) and auto-resume
-#ifdef DEVEL
-  #define CYCLETIME       2000  //  2s
-  #define RESUMETIME    900000  // 15mins
-#else
-  #define CYCLETIME      20000  // 20s
-  #define RESUMETIME  10800000  //  3hrs
+#define CYCLETIME      20000  // 20s
+#define RESUMETIME  10800000  //  3hrs
+
+#ifdef DEVEL  // apply some overrides
+  #undef CYCLETIME
+  #define CYCLETIME       3000  //  3s
+  #undef RESUMETIME
+  #define RESUMETIME    300000  //  5mins  
 #endif
 
 // Last 10 readings
@@ -64,17 +69,21 @@ byte t[10];
 byte h[10];
 unsigned int v[10];
 
-// Debug values
+// Simulate DHT readings while debugging
 #ifdef DEVEL
   byte Ptemp = 24;
   byte Phumi = 60;
   int Pvolt = 238;
 #endif
 
-void myDelay(unsigned long d) {
+//  A custom Delay function
+void myDelay(unsigned long d)
+{
   #ifdef DEVEL
+    // Keep DigiUSB alive rather than sleeping
     DigiUSB.delay(d);
   #else
+    // We really should sleep here, using an interrupt to wake.
     delay(d);
   #endif
 }
@@ -92,7 +101,8 @@ void flashFast(byte f,byte p)
   
 /*   SETUP    */
 
-void setup() {                
+void setup() 
+{                
   pinMode(VIN_PIN,INPUT);
   pinMode(BUTTON_PIN,INPUT);
   pinMode(FAN_PIN,OUTPUT);
@@ -112,6 +122,9 @@ void setup() {
     }
   #else
     do {
+      flashFast(3,LED_HIGH);
+      myDelay(250);
+      pinMode(DHT_PIN, INPUT);  // set to input for dht readings
       myDelay(250);
       t[0] = constrain(dht.getTemperature(),0,40);
       h[0] = constrain(dht.getHumidity(),0,100);
@@ -123,8 +136,6 @@ void setup() {
       v[i] = v[0];
     }
   #endif
-
-  flashFast(4,LED_HIGH);
 }
 
 /*   LOOP     */
@@ -170,22 +181,18 @@ void loop() {
     #endif
   }
 
-  #ifdef DEVEL
-    DigiUSB.print(lastRead);
-  #endif
-
   // auto change from off->low->full power according to resume timer.
-  if ((power != high) && (millis() - lastButton < RESUMETIME)) button = true;
+  if ((power != high) && (millis() - lastButton > RESUMETIME)) button = true;
 
   // Process button
   if (button) {
     switch (power) {
       case off:  power = low; 
-                 flashFast(3,LED_HIGH); 
+                 flashFast(4,LED_HIGH); 
                  led = LED_LOW;
                  break;
       case low:  power = high; 
-                 flashFast(4,LED_HIGH); 
+                 flashFast(6,LED_HIGH); 
                  led = LED_HIGH; 
                  break;
       case high: power = off; 
@@ -194,7 +201,7 @@ void loop() {
                  break;
     }
     lastButton = millis();
-    myDelay(1000);
+    myDelay(1500);
   }
 
   // Readings
@@ -211,7 +218,7 @@ void loop() {
     byte humi = constrain(dht.getHumidity(),0,100);
     float volt = constrain(analogRead(VIN_APIN),100,350);
     if (strcmp(dht.getStatusString(),"OK") != 0) {
-      flashFast(8,max(led,LED_LOW)); 
+      flashFast(10,max(led,LED_LOW)); 
     } else {
       index++;
       index%=10;
@@ -291,9 +298,9 @@ void loop() {
     DigiUSB.print(',');
     DigiUSB.print(voltAvg);
     DigiUSB.print(',');
-    DigiUSB.print(int(fan));
-    DigiUSB.print(',');
     DigiUSB.print(int(led));
+    DigiUSB.print(',');
+    DigiUSB.print(int(fan));
     DigiUSB.println();
   #endif
 }
