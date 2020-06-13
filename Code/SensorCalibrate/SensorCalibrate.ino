@@ -11,7 +11,7 @@
 #define VOLTAGESCALE 0.0531
 
 // Cycle time per reading in ms (+3s for reading+led flash)
-#define CYCLE 12000
+#define CYCLE 1500
 
 // Sensor
 DHT11 dht;
@@ -40,7 +40,7 @@ void loop() {
     digitalWrite(DHT_PIN,LOW);
     DigiUSB.delay(CYCLE);
     pinMode(DHT_PIN, INPUT);  // set to input for the dht readings
-    DigiUSB.delay(2000);
+    DigiUSB.delay(1000);
   }
   unsigned int tt=0;
   unsigned int tmax=0;
