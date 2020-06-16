@@ -1,6 +1,6 @@
  /* boat fan control
 
- Reads DHT11 temperature and humidity and Voltage on 
+ Reads DHT11 temperature and humidity and Voltage on
   the BoatFanController, and flashes a LED on the fan pin to
   show the readings
 
@@ -14,13 +14,31 @@
  Notes: 
   DHT11 is pretty low accuracy and only returns whole integer results.
   See definitions below on how to calculate voltage trigger levels.
- */
 
-// See https://digistump.com/wiki/digispark/tricks#how_to_increase_hardware_pwm_frequency
-// This requires a modification to the Arduino home folder. But gives fast PWM.
+  The default PWM frequency is 500Hz; this can be audible on the fan.
+  Running a DigiSpark at higher PWM frequency is (relatively) easy but
+  does involve modifying the wiring.c header file (in the digispark board
+  toolchain).
+  See: https://digistump.com/wiki/digispark/tricks#how_to_increase_hardware_pwm_frequency
+
+  In my case I had to edit ~/.arduino15/packages/digistump/hardware/avr/1.6.7/cores/tiny/wiring.c
+  - this is on linux, on Windows this should be somewhere like:
+  C:\Users\<MyUserName>\AppData\Local\Arduino15\packages\digistump\hardware\avr\1.6.7\cores\tiny
+
+  I followed the guide and set MS_TIMER_TICK_EVERY_X_CYCLES to 1 and the PWM frequency was
+  now very high (32KHz) but the millis() timer ran at half speed. Grrr, timer0 issues.
+  However, a very easy fix turnes out to be programming the DigiSpark up at 16MHz (fixed)
+  frequency instead of the default USB sycnched clock set setting 16.5MHz.
+  Changing the board to 'Board -> Digistump AVR Boards -> Digispark (16MHz, no USB)'
+  restored the millis() timer to correct operation while retaining the fast PWM.
+  NB: This fix must be re-applied in the (unlikely) event of the DigiStump boards package being updated.
+
+ */
  
 // For loop/logic debug use DigiUSB in place of DHT sensor
 //#define DEVEL
+// Run faster and with different voltage triggers on my testbench
+//#define BENCH
 
 #ifdef DEVEL
   #include <DigiUSB.h>
@@ -50,10 +68,8 @@
 // #define VOLTAGESCALE 0.0531
 
 // Limits
-// AFTER DEBUG   #define VIN_LOW  222  // turn off below 11.8v (integer: 11.8 / VOLTAGESCALE)
-// RESTORE       #define VIN_GOOD 235  // run low below 12.5v (integer: 12.5 / VOLTAGESCALE)  
-#define VIN_LOW  151    //  8v
-#define VIN_GOOD 188    // 10v
+#define VIN_LOW  222  // turn off below 11.8v (integer: 11.8 / VOLTAGESCALE)
+#define VIN_GOOD 235  // run low below 12.5v (integer: 12.5 / VOLTAGESCALE)
 #define TEMP_MAX 28   // fan only runs above this temperature (integer: degrees C)
 #define HUMI_MAX 70   // fan only runs above this humidity (integer; percentage)
 
@@ -66,11 +82,21 @@
 #define CYCLETIME      20000  // 20s
 #define RESUMETIME  10800000  //  3hrs
 
-#ifdef DEVEL  // apply some overrides
+#ifdef BENCH  // apply some overrides for testing on the bench
+  #undef VIN_LOW
+  #define VIN_LOW        151    //  8v (bench PSU only goes to 12v)
+  #undef VIN_GOOD
+  #define VIN_GOOD       188    // 10v
+  #undef CYCLETIME
+  #define CYCLETIME       3000  //  6s
+  #undef RESUMETIME
+  #define RESUMETIME    300000  //  15mins
+#endif
+#ifdef DEVEL  // apply some overrides for USB logic/loop debugging
   #undef CYCLETIME
   #define CYCLETIME       3000  //  3s
   #undef RESUMETIME
-  #define RESUMETIME    300000  //  5mins  
+  #define RESUMETIME    300000  //  5mins
 #endif
 
 // Last 5 readings are retained
@@ -123,7 +149,7 @@ void flashFast(byte f,byte p)
 /*   SETUP    */
 
 void setup() 
-{                
+{
   pinMode(VIN_PIN,INPUT);
   pinMode(BUTTON_PIN,INPUT);
   pinMode(FAN_PIN,OUTPUT);
@@ -178,7 +204,7 @@ void loop() {
   {
     myDelay(100);
     #ifdef DEVEL 
-      while(DigiUSB.available()) 
+      while(DigiUSB.available())
       {
         char s = DigiUSB.read();
         switch (s) 
@@ -196,13 +222,13 @@ void loop() {
         }
       }
     #else
-      if (!digitalRead(BUTTON_PIN)) 
+      if (!digitalRead(BUTTON_PIN))
       {
-        myDelay(200);  // debounce time
-        if (!digitalRead(BUTTON_PIN))  
+        myDelay(100);  // debounce
+        if (!digitalRead(BUTTON_PIN))  // still active
         {  // hold until released
           while (!digitalRead(BUTTON_PIN)) myDelay(10);
-          myDelay(200); // debounce again
+          myDelay(100); // debounce again
           button = true;
           lastRead = millis() - CYCLETIME; // fast exit time loop
         }
@@ -215,10 +241,10 @@ void loop() {
 
   // Process button
   if (button) {
-    switch (power) 
+    switch (power)
     {
       case off: power = low; 
-                 flashFast(4,LED_HIGH); 
+                 flashFast(4,LED_HIGH);
                  led = LED_LOW;
                  break;
       case low:  power = high; 
@@ -226,7 +252,7 @@ void loop() {
                  led = LED_HIGH;
                  break;
       case high: power = off; 
-                 flashFast(2,LED_HIGH); 
+                 flashFast(2,LED_HIGH);
                  led = LED_OFF; 
                  break;
     }
@@ -249,7 +275,7 @@ void loop() {
     float volt = constrain(analogRead(VIN_APIN),100,350);
     if (strcmp(dht.getStatusString(),"OK") != 0) 
     {
-      flashFast(10,max(led,LED_LOW)); 
+      flashFast(10,max(led,LED_LOW));
     } 
     else
     {
@@ -294,12 +320,12 @@ void loop() {
 
   // Process current averages and decide on fan settings
   
-  if ((voltAvg < VIN_LOW) || (power == off)) 
+  if ((voltAvg < VIN_LOW) || (power == off))
   {
     // Low battery: turn off.
     fan = 0; 
-  } 
-  else if ((voltAvg < VIN_GOOD) || (power == low)) 
+  }
+  else if ((voltAvg < VIN_GOOD) || (power == low))
   {
     // Poor battery: set low speed based on temp+humidity
     if ((tempAvg > TEMP_MAX) || (humiAvg > HUMI_MAX)) 
@@ -308,7 +334,7 @@ void loop() {
     } else {
       fan = FAN_OFF;
     }
-  } 
+  }
   else 
   {
     // Good battery: set proportional level based on temp+humidity
@@ -329,8 +355,10 @@ void loop() {
   analogWrite(FAN_PIN,fan);
 
   #ifdef DEVEL
-    DigiUSB.print(index);
+    DigiUSB.print(millis()/1000);
     DigiUSB.print(',');
+    DigiUSB.print(index);
+    DigiUSB.print(':');
     DigiUSB.print(int(power));
     DigiUSB.print(',');    
     DigiUSB.print(tempAvg);
