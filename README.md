@@ -33,13 +33,11 @@ See the 'BoatFanControl' script in the 'Software' folder.
   * 11.8->12.5V : Low Power Mode; fan is restricted to 30%
   * 12.5->Vmax  : Full power mode. fan can rise to 100%
 * Fan Control
-  * Is done on a simple Trigger value for temperature and humidity (28c and 70% respectively), the fan will start at 30% PWM power, and rise to 100% over the next four degrees C or 20% himudity. In Idle or low power mode the speed will never rise above 30%
+  * Is done on a simple Trigger value for temperature and humidity (28c and 70% respectively), the fan will start at 30% PWM power, and rise to 100% over the next four degrees temperature or 20% humidity. In low power mode the speed will never rise and remains at 30%
 * User Control
-  * The Button cycles: Full -> Quiet -> Off -> Full etc.
-  * Flashes feedback the mode when it changes
+  * The Button cycles: Full -> Quiet -> Off etc.. and flashes for feedback.
   * Quiet mode is Low power mode.
   * After three hours the mode will change to the next power level, the button is a 'sleep' function, not a on/off switch.
 * Average readings; I keep five readings and discard outliers before averaging the three middle values.
 * Testing is tricky. The code has an extensive debug mode for this.
-* I'd like to use interrupts and have the controller sleep between readings/decisions.
-
+* I'd like to use interrupts and have the controller sleep between readings/decisions, but for now I just delay(); power consumption is negligible like that, it does not register at all on the boats powermeter when the fan is off (and only 0.1A when the fan is full speed.)
