@@ -43,7 +43,7 @@
 #ifdef DEVEL
   #include <DigiUSB.h>
 #else
-  #include <DHT11.h>
+  #include "DHT11.h"
   DHT11 dht;
 #endif
 
