@@ -24,25 +24,22 @@ Case design (scad) and model files are in the repo.
 
 ![Proud](./Docs/complete-s.jpg)
 
-Software is the next target; I have working sketches (see the `Code/` folder):
-1. `VoltageCalibrate.ino` : Test and calibrate the Voltage sensor using USB-CDC serial to feedback
-2. `SensorReader.ino` : Test and relay readings from all sensors; 
-  * Readings are sequentially flashed out in groups using a LED connected in place of the fan
+# Code
+See the 'BoatFanControl' script in the 'Software' folder.
 
-These Sketches have verified my wiring and confirmed the calibration of the resistor divider used to sense the battery voltage.
-
-I now need to define the main control loop; and implement it. 
-* One reading every 30S and then decide how to set fan.
+* It takes one reading every 20S and then decides how to set fan.
 * Power Control
-  * Vmin->11.8V : Powersave mode; no activity, wake every 30s to take and process a voltage reading. Ignore button
-  * 11.8->12.6V : Low Power Mode(s); start running the fan; limit max speed. respect quiet/off overrides
-  * 12.6->Vmax  : Full power mode. respect quiet/off overrides
+  * Vmin->11.8V : Powersave mode; no activity, but still wake every 20s to take and process a voltage reading. 
+  * 11.8->12.5V : Low Power Mode; fan is restricted to 30%
+  * 12.5->Vmax  : Full power mode. fan can rise to 100%
 * Fan Control
-  * Need to think about this
+  * Is done on a simple Trigger value for temperature and humidity (28c and 70% respectively), the fan will start at 30% PWM power, and rise to 100% over the next four degrees C or 20% himudity. In Idle or low power mode the speed will never rise above 30%
 * User Control
-  * Off/Quiet/Idle
-* Average readings; discard outliers
-* Testing will be tricky.. I'll need to 'fake it' somehow for the humidity/temp readings.
+  * The Button cycles: Full -> Quiet -> Off -> Full etc.
+  * Flashes feedback the mode when it changes
+  * Quiet mode is Low power mode.
+  * After three hours the mode will change to the next power level, the button is a 'sleep' function, not a on/off switch.
+* Average readings; I keep five readings and discard outliers before averaging the three middle values.
+* Testing is tricky. The code has an extensive debug mode for this.
 * I'd like to use interrupts and have the controller sleep between readings/decisions.
 
-Finally.. Mounting the Fan. Wiring it in. And Kill the power LED on the DigiSpark (there is a track you can cut).
