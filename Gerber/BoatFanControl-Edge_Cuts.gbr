@@ -1,21 +1,24 @@
-G04 #@! TF.GenerationSoftware,KiCad,Pcbnew,5.1.4-1.fc30*
-G04 #@! TF.CreationDate,2019-08-28T11:37:06+02:00*
+G04 #@! TF.GenerationSoftware,KiCad,Pcbnew,5.1.6-1.fc32*
+G04 #@! TF.CreationDate,2020-06-22T17:05:16+02:00*
 G04 #@! TF.ProjectId,BoatFanControl,426f6174-4661-46e4-936f-6e74726f6c2e,rev?*
 G04 #@! TF.SameCoordinates,PX5140c80PY5efc680*
 G04 #@! TF.FileFunction,Profile,NP*
 %FSLAX46Y46*%
 G04 Gerber Fmt 4.6, Leading zero omitted, Abs format (unit mm)*
-G04 Created by KiCad (PCBNEW 5.1.4-1.fc30) date 2019-08-28 11:37:06*
+G04 Created by KiCad (PCBNEW 5.1.6-1.fc32) date 2020-06-22 17:05:16*
 %MOMM*%
 %LPD*%
+G01*
 G04 APERTURE LIST*
+G04 #@! TA.AperFunction,Profile*
 %ADD10C,0.100000*%
+G04 #@! TD*
 G04 APERTURE END LIST*
 D10*
-X0Y34600000D02*
+X-200000Y34600000D02*
 X-200000Y-200000D01*
 X33800000Y34600000D02*
-X0Y34600000D01*
+X-200000Y34600000D01*
 X33800000Y-200000D02*
 X33800000Y34600000D01*
 X-200000Y-200000D02*
