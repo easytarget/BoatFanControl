@@ -1,8 +1,8 @@
  /* boat fan control
 
- Reads DHT11 temperature and humidity and Voltage on
-  the BoatFanController, and flashes a LED on the fan pin to
-  show the readings
+ Reads DHT11 temperature and humidity plus the battery Voltage
+ Sets the value of a PWM fan appropriately while supporting
+ automatic and user triggered powersave and off modes 
 
          D5 - Reset pin
          D4 - N/C       (USB-)
@@ -33,11 +33,22 @@
   restored the millis() timer to correct operation while retaining the fast PWM.
   NB: This fix must be re-applied in the (unlikely) event of the DigiStump boards package being updated.
 
- */
- 
+ DEVEL Mode:
+  The DEVEL setting disables the DHT11 and simulats the sensor readings
+  via a DigiUSB interface to allow logic, timings and outputs to be tested.
+  
+  - DigiUSB uses less memory than software serial, but things are still a bit 
+    tight in the memory department. You have been warned.
+  - Send 'T', 'H', or 'V' to increase Temperature, Humidity or Voltage, lower case 
+    't', 'h' and 'v' decrease the values, 'b' simulates the button.
+  
+  I use the RubyGem DigiUSB client (as root on linux due to permissions issues,grrr) 
+  but others are available; see https://digistump.com/wiki/digispark/tutorials/digiusb
+*/
+
 // For loop/logic debug use DigiUSB in place of DHT sensor
 //#define DEVEL
-// Run faster and with different voltage triggers on my testbench
+// Run faster and with different voltage triggers on my testbench 
 //#define BENCH
 
 #ifdef DEVEL
@@ -63,28 +74,28 @@
 
 // The ADC reading is multiplied by a scale factor = (5/1024)*11 = 0.05371 to get Volts
 // The 0-5v ADC range returns a 10 bit reading of VIN via a 10k:1k resistor divider
-// Value used here is was double-checked by calibration.
-// Not used in code ;-)  Use it below when calculating VIN_LOW & VIN_GOOD
+// Value used here was double-checked by calibration.
+// Use the following when calculating VIN_LOW & VIN_GOOD
 // #define VOLTAGESCALE 0.0531
 
 // Limits
-#define VIN_LOW  222  // turn off below 11.8v (integer: 11.8 / VOLTAGESCALE)
-#define VIN_GOOD 235  // run low below 12.5v (integer: 12.5 / VOLTAGESCALE)
-#define TEMP_MAX 28   // fan only runs above this temperature (integer: degrees C)
-#define HUMI_MAX 70   // fan only runs above this humidity (integer; percentage)
+#define VIN_LOW  222  // turn on only when above 11.8v (integer) = 11.8 / VOLTAGESCALE
+#define VIN_GOOD 235  // run full when above 12.5v (integer) = 12.5 / VOLTAGESCALE
+#define TEMP_TRIGGER 28   // turn fan on when above this temperature (integer: degrees C)
+#define HUMI_TRIGGER 70   // turn fan on when above this humidity (integer; percentage)
 
 // In high power mode the fan PWM rises from FAN_LOW by this value for each integer
-//  above TEMP_MAX or HUMI_MAX respectively (until constrained by FAN_HIGH).
+//  above TEMP_TRIGGER or HUMI_TRIGGER respectively (until constrained by FAN_HIGH).
 #define TEMP_RISE 40   // = (FAN_HIGH - FAN_LOW) / 4 (4C tempperature range)
 #define HUMI_RISE 8    // = (FAN_HIGH - FAN_LOW) / 20 (20% humidity range)
 
 // Primary reading loop time (ms) and auto-resume
 #define CYCLETIME      20000  // 20s
-#define RESUMETIME  10800000  //  3hrs
+#define RESUMETIME  10800000  // 3hrs
 
 #ifdef BENCH  // apply some overrides for testing on the bench
   #undef VIN_LOW
-  #define VIN_LOW        151    //  8v (bench PSU only goes to 12v)
+  #define VIN_LOW        151    //  8v (bench PSU only goes to 12v ;-)
   #undef VIN_GOOD
   #define VIN_GOOD       188    // 10v
   #undef CYCLETIME
@@ -118,8 +129,9 @@ void myDelay(unsigned long d)
     // Keep DigiUSB alive rather than sleeping
     DigiUSB.delay(d);
   #else
-    // We really should PWM alive sleep here, using an interrupt to wake.
-    delay(d);  // But, for ease of programming, I use 'delay'.
+    // We really should low power sleep here (PWM alive), using an interrupt to wake.
+    // But, for ease of programming, I use 'delay()' for now.
+    delay(d);
   #endif
 }
 
@@ -134,18 +146,6 @@ void flashFast(byte f,byte p)
   }
 }
 
-#ifdef DEVEL  // NOTE; THIS FAILS AT PRESENT, still leaves Digispark needing unplugging...
-  void reboot(void)   // really handy to avoid unplugging/plugging the DigiSpark
-  {
-    noInterrupts();           // disable interrupts which could mess with changing prescaler
-    CLKPR = 0b10000000;       // enable prescaler speed change
-    CLKPR = 0;                // set prescaler to default (16mhz) mode required by bootloader
-    void (*ptrToFunction)();  // allocate a function pointer
-    ptrToFunction = 0x0000;   // set function pointer to bootloader reset vector
-    (*ptrToFunction)();       // jump to reset, which bounces in to bootloader
-  }
-#endif
-  
 /*   SETUP    */
 
 void setup() 
@@ -218,7 +218,6 @@ void loop() {
           case 'b': button = true;
                     lastRead = millis() - CYCLETIME;
                     break;
-          //case 'R': reboot();  // drops to bootloader. fails; see function comments.
         }
       }
     #else
@@ -241,9 +240,9 @@ void loop() {
 
   // Process button
   if (button) {
-    switch (power)
+    switch (power)  // Change power modes
     {
-      case off: power = low; 
+      case off:  power = low; 
                  flashFast(4,LED_HIGH);
                  led = LED_LOW;
                  break;
@@ -251,7 +250,7 @@ void loop() {
                  flashFast(6,LED_HIGH);
                  led = LED_HIGH;
                  break;
-      case high: power = off; 
+      case high: power = off;
                  flashFast(2,LED_HIGH);
                  led = LED_OFF; 
                  break;
@@ -262,7 +261,7 @@ void loop() {
 
   // Readings
   pinMode(DHT_PIN, INPUT);  // set to input for the dht readings
-  myDelay(1);
+  myDelay(1); // let pin settle
   #ifdef DEVEL
     index++;
     index%=5;
@@ -270,15 +269,18 @@ void loop() {
     h[index] = Phumi;
     v[index] = Pvolt;
   #else
+    // take readings and constrain to sensible value range
     byte temp = constrain(dht.getTemperature(),0,40);
     byte humi = constrain(dht.getHumidity(),0,100);
     float volt = constrain(analogRead(VIN_APIN),100,350);
     if (strcmp(dht.getStatusString(),"OK") != 0) 
     {
+      // Reading error; flash led 10 times
       flashFast(10,max(led,LED_LOW));
     } 
     else
     {
+      // Good reading; save it
       index++;
       index%=5;
       t[index] = temp;
@@ -289,7 +291,7 @@ void loop() {
   pinMode(DHT_PIN, OUTPUT); // flash led after reading
   analogWrite(DHT_PIN,led);
   myDelay(10);
-  if (power == low) myDelay(200);
+  if (power == low) myDelay(100);
   if (power == high) myDelay(200);
   digitalWrite(DHT_PIN,LOW);
 
@@ -299,10 +301,10 @@ void loop() {
   unsigned int ttot=0, tmax=0, tmin=255;
   unsigned int htot=0, hmax=0, hmin=255;
   unsigned int vtot=0, vmax=0, vmin=65534;
-  for (byte i=0; i < 5; i++)    // last 5 readings are held in the arrays
+  for (byte i=0; i < 5; i++)    // last 5 readings are retained
   {
-    ttot+=t[i];                  // Calculate totals 
-    if (t[i] < tmin) tmin=t[i];  // Note the highest/lowest values
+    ttot+=t[i];                  // Calculate totals while
+    if (t[i] < tmin) tmin=t[i];  //  noting the highest/lowest values
     if (t[i] > tmax) tmax=t[i];
     htot+=h[i];
     if (h[i] < hmin) hmin=h[i];
@@ -315,11 +317,10 @@ void loop() {
   htot = htot - hmax - hmin;
   vtot = vtot - vmax - vmin;
   unsigned int tempAvg = round(float(ttot) / 3);  // then divide by 3 to get a de-peaked average.
-  unsigned int humiAvg = round(float(htot) / 3);  //  forcing a floating point calculation
-  unsigned int voltAvg = round(float(vtot) / 3);  //  so it rounds nicely
-
-  // Process current averages and decide on fan settings
-  
+  unsigned int humiAvg = round(float(htot) / 3);  // note: we force a floating point 
+  unsigned int voltAvg = round(float(vtot) / 3);  //  calculation to make the rounding work
+ 
+  // Process values and decide on fan settings
   if ((voltAvg < VIN_LOW) || (power == off))
   {
     // Low battery: turn off.
@@ -327,8 +328,8 @@ void loop() {
   }
   else if ((voltAvg < VIN_GOOD) || (power == low))
   {
-    // Poor battery: set low speed based on temp+humidity
-    if ((tempAvg > TEMP_MAX) || (humiAvg > HUMI_MAX)) 
+    // Poor battery: set fan to low speed based on temp+humidity
+    if ((tempAvg > TEMP_TRIGGER) || (humiAvg > HUMI_TRIGGER)) 
     {
       fan = FAN_LOW;
     } else {
@@ -337,21 +338,22 @@ void loop() {
   }
   else 
   {
-    // Good battery: set proportional level based on temp+humidity
+    // Good battery: set fan fproportionally above FAN_LOW based on temp+humidity
+    // Constrain result to never exceed FAN_HIGH
     unsigned int fanT = 0;
     unsigned int fanH = 0;
-    if (tempAvg >= TEMP_MAX)
+    if (tempAvg >= TEMP_TRIGGER)
     {
-      fanT = min(FAN_LOW + ((tempAvg - TEMP_MAX) * TEMP_RISE),FAN_HIGH); 
+      fanT = min(FAN_LOW + ((tempAvg - TEMP_TRIGGER) * TEMP_RISE),FAN_HIGH); 
     }
-    if (humiAvg >= HUMI_MAX) 
+    if (humiAvg >= HUMI_TRIGGER) 
     {
-      fanH = min(FAN_LOW + ((humiAvg - HUMI_MAX) * HUMI_RISE),FAN_HIGH);
+      fanH = min(FAN_LOW + ((humiAvg - HUMI_TRIGGER) * HUMI_RISE),FAN_HIGH);
     }
-    fan = max(fanT,fanH);
+    fan = max(fanT,fanH); 
   }
 
-  // This is why we did all the above.. ;-)
+  // This is why we do all the above.. ;-)
   analogWrite(FAN_PIN,fan);
 
   #ifdef DEVEL
