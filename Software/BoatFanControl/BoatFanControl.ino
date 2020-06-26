@@ -1,7 +1,7 @@
  /* boat fan control
 
- Reads DHT11 temperature and humidity plus the battery Voltage
- Sets the value of a PWM fan appropriately while supporting
+ Reads DHT11 Temperature and Humidity plus the battery Voltage
+ It uses these values to set the PWM fan appropriately while supporting
  automatic and user triggered powersave and off modes 
 
          D5 - Reset pin
@@ -26,27 +26,17 @@
   C:\Users\<MyUserName>\AppData\Local\Arduino15\packages\digistump\hardware\avr\1.6.7\cores\tiny
 
   I followed the guide and set MS_TIMER_TICK_EVERY_X_CYCLES to 1 and the PWM frequency was
-  now very high (32KHz) but the millis() timer ran at half speed. Grrr, timer0 issues.
-  However, a very easy fix turnes out to be programming the DigiSpark up at 16MHz (fixed)
-  frequency instead of the default USB sycnched clock set setting 16.5MHz.
+  now very high (32KHz), but the millis() timer ran at half speed. Grrr, timer0 issues.
+
+  A very easy fix turns out to be programming the DigiSpark at 16MHz (fixed)
+  frequency instead of the default USB sycnched clock setting of 16.5MHz.
   Changing the board to 'Board -> Digistump AVR Boards -> Digispark (16MHz, no USB)'
   restored the millis() timer to correct operation while retaining the fast PWM.
   NB: This fix must be re-applied in the (unlikely) event of the DigiStump boards package being updated.
 
- DEVEL Mode:
-  The DEVEL setting disables the DHT11 and simulats the sensor readings
-  via a DigiUSB interface to allow logic, timings and outputs to be tested.
-  
-  - DigiUSB uses less memory than software serial, but things are still a bit 
-    tight in the memory department. You have been warned.
-  - Send 'T', 'H', or 'V' to increase Temperature, Humidity or Voltage, lower case 
-    't', 'h' and 'v' decrease the values, 'b' simulates the button.
-  
-  I use the RubyGem DigiUSB client (as root on linux due to permissions issues,grrr) 
-  but others are available; see https://digistump.com/wiki/digispark/tutorials/digiusb
 */
 
-// Run faster and with different voltage triggers on my testbench 
+// Run with faster cycles and with different voltage triggers on my testbench 
 //#define BENCH
 
 #include "DHT11.h"
