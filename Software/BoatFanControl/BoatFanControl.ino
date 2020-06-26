@@ -46,17 +46,21 @@
   but others are available; see https://digistump.com/wiki/digispark/tutorials/digiusb
 */
 
-// For loop/logic debug use DigiUSB in place of DHT sensor
-//#define DEVEL
 // Run faster and with different voltage triggers on my testbench 
 //#define BENCH
 
-#ifdef DEVEL
-  #include <DigiUSB.h>
-#else
-  #include "DHT11.h"
-  DHT11 dht;
+#include "DHT11.h"
+DHT11 dht;
+
+// Set/clear bit functions for sleeping the ADC
+#ifndef cbi
+#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
 #endif
+
+#ifndef sbi
+#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
+#endif
+
 
 #define FAN_PIN 0
 #define DHT_PIN 1
@@ -103,47 +107,61 @@
   #undef RESUMETIME
   #define RESUMETIME    300000  //  15mins
 #endif
-#ifdef DEVEL  // apply some overrides for USB logic/loop debugging
-  #undef CYCLETIME
-  #define CYCLETIME       3000  //  3s
-  #undef RESUMETIME
-  #define RESUMETIME    300000  //  5mins
-#endif
 
 // Last 5 readings are retained
 byte t[5];
 byte h[5];
 unsigned int v[5];
 
-// Simulate DHT readings when debugging
-#ifdef DEVEL
-  byte Ptemp = 24;
-  byte Phumi = 60;
-  int  Pvolt = 238;
-#endif
+int counter = 0; // counts watchdog events to trigger readings
+bool button = false;  // set when button pressed
 
-//  A custom Delay function
-void myDelay(unsigned long d)
-{
-  #ifdef DEVEL
-    // Keep DigiUSB alive rather than sleeping
-    DigiUSB.delay(d);
-  #else
-    // We really should low power sleep here (PWM alive), using an interrupt to wake.
-    // But, for ease of programming, I use 'delay()' for now.
-    delay(d);
-  #endif
-}
 
-void flashFast(byte f,byte p)
+/* Led flashes */
+
+void flashFast(byte flashes, byte pwm)
 {
   pinMode(DHT_PIN, OUTPUT);
-  for (byte i=0; i < f; i++) {
-    analogWrite(DHT_PIN,p);
-    myDelay(80);
+  for (byte i=0; i < flashes; i++) {
+    analogWrite(DHT_PIN,pwm);
+    delay(80);
     digitalWrite(DHT_PIN,LOW);
-    myDelay(150);
+    delay(150);
   }
+}
+
+/* Sleep Functions */
+
+void setup_watchdog(int count) {
+  // count:: 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,
+  // 5=500ms, 6=1 sec,7=2 sec, 8=4 sec, 9= 8sec
+
+  byte bitbuf;
+  if (count > 9 ) count=9;
+  bitbuf=count & 7;
+  if (count > 7) bitbuf|= (1<<5);
+  bitbuf|= (1<<WDCE);
+  MCUSR &= ~(1<<WDRF);
+  // start timed sequence
+  WDTCR |= (1<<WDCE) | (1<<WDE);
+  // set new watchdog timeout value
+  WDTCR = bitbuf;
+  WDTCR |= _BV(WDIE);
+}
+
+void setup_pininterrupt() {
+  GIMSK |= _BV(PCIE);
+  PCMSK |= _BV(PCINT3);
+}
+
+// Watchdog Interrupt Service 
+ISR(WDT_vect) {
+  counter++;
+}
+
+// Pin interrupt service
+ISR(PCINT0_vect) {
+  button=true;
 }
 
 /*   SETUP    */
@@ -151,44 +169,35 @@ void flashFast(byte f,byte p)
 void setup() 
 {
   pinMode(VIN_PIN,INPUT);
-  pinMode(BUTTON_PIN,INPUT);
+  pinMode(BUTTON_PIN,INPUT_PULLUP);
   pinMode(FAN_PIN,OUTPUT);
   analogWrite(FAN_PIN,0);
-  #ifdef DEVEL
-    DigiUSB.begin();
-  #else
-    dht.setup(DHT_PIN);
-  #endif
+  dht.setup(DHT_PIN);
+
+  setup_watchdog(8);
+  setup_pininterrupt();
 
   // pre-populate the results
-  #ifdef DEVEL
-    for (byte i=0; i < 5; i++) {
-      t[i] = Ptemp;
-      h[i] = Phumi;
-      v[i] = Pvolt;
-    }
-  #else
-    do {
-      flashFast(3,LED_HIGH);
-      myDelay(250);
-      pinMode(DHT_PIN, INPUT);  // set to input for dht readings
-      myDelay(250);
-      t[0] = constrain(dht.getTemperature(),0,40);
-      h[0] = constrain(dht.getHumidity(),0,100);
-      v[0] = constrain(analogRead(VIN_APIN),0,350);
-    } while (strcmp(dht.getStatusString(),"OK") != 0);
-    for (byte i=1; i < 5; i++) {  
-      t[i] = t[0];
-      h[i] = h[0];
-      v[i] = v[0];
-    }
-  #endif
+  do {
+    flashFast(3,LED_HIGH);
+    delay(250);
+    pinMode(DHT_PIN, INPUT);  // set to input for dht readings
+    delay(250);
+    t[0] = constrain(dht.getTemperature(),0,40);
+    h[0] = constrain(dht.getHumidity(),0,100);
+    v[0] = constrain(analogRead(VIN_APIN),0,350);
+  } while (strcmp(dht.getStatusString(),"OK") != 0);
+  for (byte i=1; i < 5; i++) {  
+    t[i] = t[0];
+    h[i] = h[0];
+    v[i] = v[0];
+  }
 }
 
 /*   LOOP     */
 
-// Main Power mode
-// Defaults high, then cycles ->off->low->high etc with button and timer
+// Main Power mode. Defaults to high, then cycles ->off->low->high 
+// with button press.  
 enum powerstates{off,low,high} power = high;
 
 unsigned long lastRead = -CYCLETIME; // force an immediate read cycle
@@ -198,43 +207,28 @@ byte fan = 0;
 byte led = 255;
 
 void loop() {
-  bool button = false;
+  button = false;
   
+  cbi(ADCSRA,ADEN);   // switch ADC off while asleep
+
   while(millis() - lastRead < CYCLETIME) 
   {
-    myDelay(100);
-    #ifdef DEVEL 
-      while(DigiUSB.available())
-      {
-        char s = DigiUSB.read();
-        switch (s) 
-        {
-          case 'T': Ptemp=min(Ptemp+1,40); break;
-          case 't': Ptemp=max(Ptemp-1,0); break;
-          case 'H': Phumi=min(Phumi+1,100); break;
-          case 'h': Phumi=max(Phumi-1,0); break;
-          case 'V': Pvolt=min(Pvolt+1,350); break;
-          case 'v': Pvolt=max(Pvolt-1,100); break;
-          case 'b': button = true;
-                    lastRead = millis() - CYCLETIME;
-                    break;
-        }
+    delay(100);
+    if (!digitalRead(BUTTON_PIN))
+    {
+      delay(100);  // debounce
+      if (!digitalRead(BUTTON_PIN))  // still active
+      {  // hold until released
+        while (!digitalRead(BUTTON_PIN)) delay(10);
+        delay(100); // debounce again
+        button = true;
+        lastRead = millis() - CYCLETIME; // fast exit time loop
       }
-    #else
-      if (!digitalRead(BUTTON_PIN))
-      {
-        myDelay(100);  // debounce
-        if (!digitalRead(BUTTON_PIN))  // still active
-        {  // hold until released
-          while (!digitalRead(BUTTON_PIN)) myDelay(10);
-          myDelay(100); // debounce again
-          button = true;
-          lastRead = millis() - CYCLETIME; // fast exit time loop
-        }
-      }
-    #endif
+    }
   }
 
+  sbi(ADCSRA,ADEN);   // switch ADC back on
+  
   // auto change from off->low->full power according to resume timer by simulating a button press
   if ((power != high) && (millis() - lastButton > RESUMETIME)) button = true;
 
@@ -256,43 +250,37 @@ void loop() {
                  break;
     }
     lastButton = millis();
-    myDelay(1000);
+    delay(1000);
   }
 
   // Readings
   pinMode(DHT_PIN, INPUT);  // set to input for the dht readings
-  myDelay(1); // let pin settle
-  #ifdef DEVEL
+  delay(1); // let pin settle
+
+  // take readings and constrain to sensible value range
+  byte temp = constrain(dht.getTemperature(),0,40);
+  byte humi = constrain(dht.getHumidity(),0,100);
+  float volt = constrain(analogRead(VIN_APIN),100,350);
+  if (strcmp(dht.getStatusString(),"OK") != 0) 
+  {
+    // Reading error; flash led 10 times
+    flashFast(10,max(led,LED_LOW));
+  } 
+  else
+  {
+    // Good reading; save it
     index++;
     index%=5;
-    t[index] = Ptemp;
-    h[index] = Phumi;
-    v[index] = Pvolt;
-  #else
-    // take readings and constrain to sensible value range
-    byte temp = constrain(dht.getTemperature(),0,40);
-    byte humi = constrain(dht.getHumidity(),0,100);
-    float volt = constrain(analogRead(VIN_APIN),100,350);
-    if (strcmp(dht.getStatusString(),"OK") != 0) 
-    {
-      // Reading error; flash led 10 times
-      flashFast(10,max(led,LED_LOW));
-    } 
-    else
-    {
-      // Good reading; save it
-      index++;
-      index%=5;
-      t[index] = temp;
-      h[index] = humi;
-      v[index] = volt;
-    }
-  #endif
+    t[index] = temp;
+    h[index] = humi;
+    v[index] = volt;
+  }
+
   pinMode(DHT_PIN, OUTPUT); // flash led after reading
   analogWrite(DHT_PIN,led);
-  myDelay(10);
-  if (power == low) myDelay(100);
-  if (power == high) myDelay(200);
+  delay(10);
+  if (power == low) delay(100);
+  if (power == high) delay(200);
   digitalWrite(DHT_PIN,LOW);
 
   lastRead = millis();
@@ -324,7 +312,7 @@ void loop() {
   if ((voltAvg < VIN_LOW) || (power == off))
   {
     // Low battery: turn off.
-    fan = 0; 
+    fan = 0;
   }
   else if ((voltAvg < VIN_GOOD) || (power == low))
   {
@@ -338,7 +326,7 @@ void loop() {
   }
   else 
   {
-    // Good battery: set fan fproportionally above FAN_LOW based on temp+humidity
+    // Good battery: set fan proportionally above FAN_LOW based on temp+humidity
     // Constrain result to never exceed FAN_HIGH
     unsigned int fanT = 0;
     unsigned int fanH = 0;
@@ -356,22 +344,4 @@ void loop() {
   // This is why we do all the above.. ;-)
   analogWrite(FAN_PIN,fan);
 
-  #ifdef DEVEL
-    DigiUSB.print(millis()/1000);
-    DigiUSB.print(',');
-    DigiUSB.print(index);
-    DigiUSB.print(':');
-    DigiUSB.print(int(power));
-    DigiUSB.print(',');    
-    DigiUSB.print(tempAvg);
-    DigiUSB.print(',');
-    DigiUSB.print(humiAvg);
-    DigiUSB.print(',');
-    DigiUSB.print(voltAvg);
-    DigiUSB.print(',');
-    DigiUSB.print(int(led));
-    DigiUSB.print(',');
-    DigiUSB.print(int(fan));
-    DigiUSB.println();
-  #endif
 }
