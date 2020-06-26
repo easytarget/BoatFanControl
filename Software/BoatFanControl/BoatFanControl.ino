@@ -113,6 +113,13 @@ byte t[5];
 byte h[5];
 unsigned int v[5];
 
+// Sleep: need to set:
+// sleep mode fan on
+// sleep mode fan off
+// sleep period
+  // period:: 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,
+  // 5=500ms, 6=1 sec,7=2 sec, 8=4 sec, 9= 8sec
+// sleep count
 int counter = 0; // counts watchdog events to trigger readings
 bool button = false;  // set when button pressed
 
@@ -132,14 +139,11 @@ void flashFast(byte flashes, byte pwm)
 
 /* Sleep Functions */
 
-void setup_watchdog(int count) {
-  // count:: 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,
-  // 5=500ms, 6=1 sec,7=2 sec, 8=4 sec, 9= 8sec
-
+void setup_watchdog(int period) {
   byte bitbuf;
-  if (count > 9 ) count=9;
-  bitbuf=count & 7;
-  if (count > 7) bitbuf|= (1<<5);
+  if (period > 9 ) period=9;
+  bitbuf=period & 7;
+  if (period > 7) bitbuf|= (1<<5);
   bitbuf|= (1<<WDCE);
   MCUSR &= ~(1<<WDRF);
   // start timed sequence
@@ -174,9 +178,6 @@ void setup()
   analogWrite(FAN_PIN,0);
   dht.setup(DHT_PIN);
 
-  setup_watchdog(8);
-  setup_pininterrupt();
-
   // pre-populate the results
   do {
     flashFast(3,LED_HIGH);
@@ -192,12 +193,15 @@ void setup()
     h[i] = h[0];
     v[i] = v[0];
   }
+
+  // Set up interrupts
+  setup_watchdog(8);
+  setup_pininterrupt();
 }
 
 /*   LOOP     */
 
-// Main Power mode. Defaults to high, then cycles ->off->low->high 
-// with button press.  
+// Power mode. Defaults to high, then cycles ->off->low->high etc with button
 enum powerstates{off,low,high} power = high;
 
 unsigned long lastRead = -CYCLETIME; // force an immediate read cycle
