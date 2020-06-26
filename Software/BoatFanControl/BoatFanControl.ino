@@ -235,7 +235,7 @@ void loop() {
     #endif
   }
 
-  // auto change from off->low->full power according to resume timer.
+  // auto change from off->low->full power according to resume timer by simulating a button press
   if ((power != high) && (millis() - lastButton > RESUMETIME)) button = true;
 
   // Process button
@@ -256,7 +256,7 @@ void loop() {
                  break;
     }
     lastButton = millis();
-    myDelay(1500);
+    myDelay(1000);
   }
 
   // Readings
