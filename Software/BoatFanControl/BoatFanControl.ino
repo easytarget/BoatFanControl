@@ -21,7 +21,8 @@
   toolchain).
   See: https://digistump.com/wiki/digispark/tricks#how_to_increase_hardware_pwm_frequency
 
-  In my case I had to edit ~/.arduino15/packages/digistump/hardware/avr/1.6.7/cores/tiny/wiring.c
+  In my case I had to edit 
+  ~/.arduino15/packages/digistump/hardware/avr/1.6.7/cores/tiny/wiring.c
   - this is on linux, on Windows this should be somewhere like:
   C:\Users\<MyUserName>\AppData\Local\Arduino15\packages\digistump\hardware\avr\1.6.7\cores\tiny
 
@@ -32,31 +33,29 @@
   frequency instead of the default USB sycnched clock setting of 16.5MHz.
   Changing the board to 'Board -> Digistump AVR Boards -> Digispark (16MHz, no USB)'
   restored the millis() timer to correct operation while retaining the fast PWM.
-  NB: This fix must be re-applied in the (unlikely) event of the DigiStump boards package being updated.
+  NB: This fix must be re-applied in the (unlikely) event of the DigiStump 
+  boards package being updated.
 
 */
 
 // Run with faster cycles and with different voltage triggers on my testbench 
 //#define BENCH
 
+#include <avr/sleep.h>
+#include <avr/wdt.h>
 #include "DHT11.h"
-DHT11 dht;
 
-// Set/clear bit functions for sleeping the ADC
-#ifndef cbi
-#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
-#endif
+// Utility macros
+#define adc_disable() (ADCSRA &= ~(1 << ADEN))
+#define adc_enable()  (ADCSRA |= (1 << ADEN))
 
-#ifndef sbi
-#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
-#endif
-
-
+// Pins
 #define FAN_PIN 0
 #define DHT_PIN 1
 #define VIN_PIN 2
 #define VIN_APIN 1 // digital pin 2 is also analog pin 1
-#define BUTTON_PIN 3 
+#define BUTTON_PIN 3
+#define BTNINT PCINT3
 
 // Values
 #define FAN_OFF    0
@@ -66,55 +65,64 @@ DHT11 dht;
 #define LED_LOW   10
 #define LED_HIGH 255
 
-// The ADC reading is multiplied by a scale factor = (5/1024)*11 = 0.05371 to get Volts
-// The 0-5v ADC range returns a 10 bit reading of VIN via a 10k:1k resistor divider
-// Value used here was double-checked by calibration.
-// Use the following when calculating VIN_LOW & VIN_GOOD
-// #define VOLTAGESCALE 0.0531
+/* 
+   The ADC reading is multiplied by a scale factor = (5/1024)*11 = 0.05371 to get Volts
+   The 0-5v ADC range returns a 10 bit reading of VIN via a 10k:1k resistor divider
+   Value used here was double-checked by calibration.
+   Use the following when calculating VIN_LOW & VIN_GOOD
+   VOLTAGESCALE = 0.0531 
+*/
 
 // Limits
 #define VIN_LOW  222  // turn on only when above 11.8v (integer) = 11.8 / VOLTAGESCALE
 #define VIN_GOOD 235  // run full when above 12.5v (integer) = 12.5 / VOLTAGESCALE
-#define TEMP_TRIGGER 28   // turn fan on when above this temperature (integer: degrees C)
-#define HUMI_TRIGGER 70   // turn fan on when above this humidity (integer; percentage)
+#define TEMP_TRIGGER 28   // turn fan on when above this temperature (integer)
+#define HUMI_TRIGGER 70   // turn fan on when above this humidity (integer)
 
 // In high power mode the fan PWM rises from FAN_LOW by this value for each integer
 //  above TEMP_TRIGGER or HUMI_TRIGGER respectively (until constrained by FAN_HIGH).
-#define TEMP_RISE 40   // = (FAN_HIGH - FAN_LOW) / 4 (4C tempperature range)
-#define HUMI_RISE 8    // = (FAN_HIGH - FAN_LOW) / 20 (20% humidity range)
+#define TEMP_RISE 40   // = (FAN_HIGH - FAN_LOW) / 4
+#define HUMI_RISE 8    // = (FAN_HIGH - FAN_LOW) / 20
 
-// Primary reading loop time (ms) and auto-resume
-#define CYCLETIME      20000  // 20s
-#define RESUMETIME  10800000  // 3hrs
+// During sleep the millis() counter is stopped, so
+//  we take timings for the reading and resume cycles
+//  by counting watchdog cycles.
+
+//   watchdog period:: 0=16ms, 1=32ms,2=64ms,3=128ms,
+//   4=250ms, 5=500ms, 6=1s,7=2s, 8=4s, 9= 8s
+#define WDPERIOD 8        // Sleep cycle = 4 seconds
+#define READCYCLES 5       // Reading cycles:   5x4s = 20s
+#define RESUMECYCLES 2700  // Resume cycles: 2700x4s = 3hrs
+
 
 #ifdef BENCH  // apply some overrides for testing on the bench
-  #undef VIN_LOW
-  #define VIN_LOW        151    //  8v (bench PSU only goes to 12v ;-)
-  #undef VIN_GOOD
-  #define VIN_GOOD       188    // 10v
-  #undef CYCLETIME
-  #define CYCLETIME       3000  //  6s
-  #undef RESUMETIME
-  #define RESUMETIME    300000  //  15mins
+  #undef READCYCLES
+  #define READCYCLES     2    // 8s
+  #undef RESUMECYCLES
+  #define RESUMECYCLES  30  //  2mins
 #endif
+
+// Sensor
+DHT11 dht;
 
 // Last 5 readings are retained
 byte t[5];
 byte h[5];
 unsigned int v[5];
 
-// Sleep: need to set:
-// sleep mode fan on
-// sleep mode fan off
-// sleep period
-  // period:: 0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,
-  // 5=500ms, 6=1 sec,7=2 sec, 8=4 sec, 9= 8sec
-// sleep count
-int counter = 0; // counts watchdog events to trigger readings
-bool button = false;  // set when button pressed
+// Power mode. Defaults to high, then cycles ->off->low->high etc with button
+enum powerstates{off,low,high} power = high;
 
+// UI and watchdog
+int sensorcounter = READCYCLES;  // counts watchdog to trigger readings, preloaded
+int resumecounter = 0;  // counts watchdog events for mode resume
+bool watchdog = false;  // flag when watchdog triggered
+bool button = false;    // flag when button pressed
+int index = 0;          // Index to the readings array
+byte fan = 0;           // Current fan setting
+byte led = 255;         // LED Power (reduced in quiet/off modes)
 
-/* Led flashes */
+/* Utility Functions */
 
 void flashFast(byte flashes, byte pwm)
 {
@@ -145,17 +153,20 @@ void setup_watchdog(int period) {
 
 void setup_pininterrupt() {
   GIMSK |= _BV(PCIE);
-  PCMSK |= _BV(PCINT3);
+  PCMSK |= _BV(BTNINT);
 }
 
 // Watchdog Interrupt Service 
 ISR(WDT_vect) {
-  counter++;
+  watchdog = true;
+  sensorcounter++;
+  if (resumecounter < RESUMECYCLES) resumecounter++;
 }
 
 // Pin interrupt service
 ISR(PCINT0_vect) {
-  button=true;
+  // ignore unless pin is low
+  if (!digitalRead(BUTTON_PIN)) button=true;
 }
 
 /*   SETUP    */
@@ -185,46 +196,49 @@ void setup()
   }
 
   // Set up interrupts
-  setup_watchdog(8);
+  setup_watchdog(WDPERIOD);
   setup_pininterrupt();
 }
 
 /*   LOOP     */
 
-// Power mode. Defaults to high, then cycles ->off->low->high etc with button
-enum powerstates{off,low,high} power = high;
-
-unsigned long lastRead = -CYCLETIME; // force an immediate read cycle
-unsigned long lastButton = 0; // make like we just pressed the button
-int index = 0;
-byte fan = 0;
-byte led = 255;
-
 void loop() {
-  button = false;
-  
-  cbi(ADCSRA,ADEN);   // switch ADC off while asleep
+  button=false;
 
-  while(millis() - lastRead < CYCLETIME) 
-  {
-    delay(100);
-    if (!digitalRead(BUTTON_PIN))
-    {
-      delay(100);  // debounce
-      if (!digitalRead(BUTTON_PIN))  // still active
-      {  // hold until released
-        while (!digitalRead(BUTTON_PIN)) delay(10);
-        delay(100); // debounce again
-        button = true;
-        lastRead = millis() - CYCLETIME; // fast exit time loop
-      }
+  adc_disable();   // switch ADC off while asleep
+  while ((sensorcounter < READCYCLES) && !button) {
+    // Loop here accumulating interrupts until button is pressed or
+    //  the watchdog counter reaches READCYCLES
+    if (fan > FAN_OFF) {
+      // if fan is running, we are in a battery ok state
+      // Use delay(); we cant sleep since that shuts PWM down
+      while (!button && !watchdog) delay(50); 
+    } 
+    else {
+      // fan is off, use a sleep mode
+      set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+      sleep_enable();
+      sleep_mode();    // Sleep here
+      sleep_disable(); 
+    }
+    if (button) {
+      delay(20);    // debounce
+      if (!digitalRead(BUTTON_PIN)) button = true;
+      else button = false;
+    }
+    if (watchdog) {     // Timed out watchdog
+      watchdog=false;   // reset flag, counter is incremented in service routine.
     }
   }
-
-  sbi(ADCSRA,ADEN);   // switch ADC back on
+  sensorcounter = 0; // reset the counter
+  adc_enable();   // switch ADC back on
+  analogRead(VIN_APIN);  // stabilise ADC, 1st reading after resume is unreliable
   
-  // auto change from off->low->full power according to resume timer by simulating a button press
-  if ((power != high) && (millis() - lastButton > RESUMETIME)) button = true;
+  // auto change from off->low->full power according to resume counter
+  if ((power != high) && (resumecounter == RESUMECYCLES)) {
+    button = true;  // virtual button press to change state ;-)
+    resumecounter = 0; // reset the counter
+  }
 
   // Process button
   if (button) {
@@ -243,8 +257,7 @@ void loop() {
                  led = LED_OFF; 
                  break;
     }
-    lastButton = millis();
-    delay(1000);
+    resumecounter = 0;
   }
 
   // Readings
@@ -277,8 +290,6 @@ void loop() {
   if (power == high) delay(200);
   digitalWrite(DHT_PIN,LOW);
 
-  lastRead = millis();
-
   // Averages
   unsigned int ttot=0, tmax=0, tmin=255;
   unsigned int htot=0, hmax=0, hmin=255;
@@ -298,15 +309,15 @@ void loop() {
   ttot = ttot - tmax - tmin;   // take off min and max values from the totals
   htot = htot - hmax - hmin;
   vtot = vtot - vmax - vmin;
-  unsigned int tempAvg = round(float(ttot) / 3);  // then divide by 3 to get a de-peaked average.
+  unsigned int tempAvg = round(float(ttot) / 3);  // then divide by 3
   unsigned int humiAvg = round(float(htot) / 3);  // note: we force a floating point 
-  unsigned int voltAvg = round(float(vtot) / 3);  //  calculation to make the rounding work
+  unsigned int voltAvg = round(float(vtot) / 3);  //  calculation so rounding works
  
   // Process values and decide on fan settings
   if ((voltAvg < VIN_LOW) || (power == off))
   {
     // Low battery: turn off.
-    fan = 0;
+    fan = FAN_OFF;
   }
   else if ((voltAvg < VIN_GOOD) || (power == low))
   {
