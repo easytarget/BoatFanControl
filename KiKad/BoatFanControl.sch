@@ -364,12 +364,12 @@ $Comp
 L Diode:1N4007 D2
 U 1 1 5EF13D6F
 P 4450 1000
-F 0 "D2" V 4500 1350 50  0000 C CNN
-F 1 "1N4007" V 4400 1250 50  0000 C CNN
+F 0 "D2" V 4500 850 50  0000 C CNN
+F 1 "1N4007" V 4400 750 50  0000 C CNN
 F 2 "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal" H 4450 825 50  0001 C CNN
 F 3 "http://www.vishay.com/docs/88503/1n4001.pdf" H 4450 1000 50  0001 C CNN
 	1    4450 1000
-	0    -1   -1   0   
+	0    1    1    0   
 $EndComp
 Text GLabel 4350 750  0    50   Input ~ 0
 Vbatt
